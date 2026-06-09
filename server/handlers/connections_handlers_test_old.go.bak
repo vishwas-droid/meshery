@@ -1,0 +1,578 @@
+package handlers
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"context"
+	"github.com/gofrs/uuid"
+	"github.com/gorilla/mux"
+	"github.com/meshery/meshery/server/models"
+	"github.com/meshery/meshery/server/models/connections"
+	"github.com/meshery/meshkit/logger"
+	"github.com/meshery/schemas/models/core"
+)
+
+func newConnectionsTestHandler(t *testing.T) *Handler {
+	log, err := logger.New("test", logger.Options{})
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+
+	id := core.Uuid(uuid.Must(uuid.NewV4()))
+
+	return &Handler{
+		log:      log,
+		SystemID: &id,
+	}
+}
+
+func TestHandleProcessTermination_BadJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodDelete,
+		"/",
+		strings.NewReader("{bad json"),
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.handleProcessTermination(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+func TestGetConnectionByID_InvalidUUID(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections/invalid",
+		nil,
+	)
+
+	req = mux.SetURLVars(req, map[string]string{
+		"connectionId": "invalid-uuid",
+	})
+
+	rr := httptest.NewRecorder()
+
+	h.GetConnectionByID(
+		rr,
+		req,
+		nil,
+		nil,
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+func TestGetConnections_InvalidStatusJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections?status=invalid-json",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.GetConnections(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+
+func TestGetConnections_InvalidKindJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections?kind=invalid-json",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.GetConnections(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+
+func TestGetConnections_InvalidTypeJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections?type=invalid-json",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.GetConnections(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d got %d", http.StatusInternalServerError, rr.Code)
+	}
+}
+func TestSaveConnection_InvalidJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/connections",
+		strings.NewReader("{bad json"),
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.SaveConnection(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+func TestSaveConnection_EmptyBody(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/connections",
+		strings.NewReader(""),
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.SaveConnection(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+func TestGetConnectionByID_EmptyUUID(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections/",
+		nil,
+	)
+
+	req = mux.SetURLVars(req, map[string]string{
+		"connectionId": "",
+	})
+
+	rr := httptest.NewRecorder()
+
+	h.GetConnectionByID(
+		rr,
+		req,
+		nil,
+		nil,
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, rr.Code)
+	}
+}
+func TestGetConnectionsByKind_NilProvider(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/connections/kubernetes",
+		nil,
+	)
+
+	req = mux.SetURLVars(req, map[string]string{
+		"connectionKind": "kubernetes",
+	})
+
+	rr := httptest.NewRecorder()
+
+	defer func() {
+		_ = recover()
+	}()
+
+	h.GetConnectionsByKind(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+}
+func TestUpdateConnectionById_InvalidJSON(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/connections/test",
+		strings.NewReader("{bad-json}"),
+	)
+
+	req = mux.SetURLVars(req, map[string]string{
+		"connectionId": uuid.Must(uuid.NewV4()).String(),
+	})
+
+	rr := httptest.NewRecorder()
+
+	h.UpdateConnectionById(
+		rr,
+		req,
+		nil,
+		&models.User{
+			ID: uuid.Must(uuid.NewV4()),
+		},
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+}
+func TestHandleMeshSyncDeploymentModeChange_NilConnection(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	id := uuid.Must(uuid.NewV4())
+
+	_, _, _, err := h.handleMeshSyncDeploymentModeChange(
+		context.Background(),
+		id,
+		nil,
+		"",
+		id,
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+func TestHandleMeshSyncDeploymentModeChange_NilSystemID(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+	h.SystemID = nil
+
+	_, _, _, err := h.handleMeshSyncDeploymentModeChange(
+		context.Background(),
+		uuid.Must(uuid.NewV4()),
+		&connections.ConnectionPayload{}, // nil nahi
+		"",
+		uuid.Must(uuid.NewV4()),
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+func TestDeleteConnection_NilProvider(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/connections/test", nil)
+	req = mux.SetURLVars(req, map[string]string{
+		"connectionId": uuid.Must(uuid.NewV4()).String(),
+	})
+
+	rr := httptest.NewRecorder()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic from nil provider")
+		}
+	}()
+
+	var provider models.Provider
+
+	h.DeleteConnection(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		provider,
+	)
+}
+func TestProcessConnectionRegistration_NilProvider(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/connections/register",
+		strings.NewReader(`{}`),
+	)
+
+	rr := httptest.NewRecorder()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+
+	var provider models.Provider
+
+	h.ProcessConnectionRegistration(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		provider,
+	)
+}
+func TestHandleMeshSyncDeploymentModeChange_NilProvider(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+
+	h.handleMeshSyncDeploymentModeChange(
+		context.Background(),
+		uuid.Must(uuid.NewV4()),
+		&connections.ConnectionPayload{},
+		"",
+		uuid.Must(uuid.NewV4()),
+		nil,
+	)
+}
+func TestLoginHandler_BadMethod(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/login", nil)
+	rr := httptest.NewRecorder()
+
+	h.LoginHandler(rr, req, nil, false)
+	t.Logf("code=%d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestViewHandler_BadPath(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/view?file=%zz",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.ViewHandler(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestViewHandler_FileNotFound(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/view?file=/tmp/does-not-exist",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.ViewHandler(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestDownloadHandler_BadPath(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/download?file=%zz",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.DownloadHandler(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestDownloadHandler_FileNotFound(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/download?file=/tmp/does-not-exist",
+		nil,
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.DownloadHandler(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestHandleErrorHandler(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/error", nil)
+	rr := httptest.NewRecorder()
+
+	h.HandleErrorHandler(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+func TestProcessConnectionRegistration_DeleteMethod(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodDelete,
+		"/",
+		strings.NewReader("{bad json"),
+	)
+
+	rr := httptest.NewRecorder()
+
+	h.ProcessConnectionRegistration(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		nil,
+	)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("got %d", rr.Code)
+	}
+}
+
+func TestNotifySmOfConnectionStatusChange_EmptyStatus(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	conn := &connections.ConnectionPayload{}
+
+	_, err := h.NotifySmOfConnectionStatusChange(
+		context.Background(),
+		uuid.Must(uuid.NewV4()),
+		nil,
+		"",
+		conn,
+	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+func TestHandleRegistrationInitEvent_NilRegistryManager(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	rr := httptest.NewRecorder()
+
+	payload := &connections.ConnectionPayload{
+		Kind: "kubernetes",
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+
+	h.handleRegistrationInitEvent(rr, req, payload)
+}
+func TestProcessConnectionRegistration_InitStatus(t *testing.T) {
+	h := newConnectionsTestHandler(t)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/connections/register",
+		strings.NewReader(`{
+			"kind":"kubernetes",
+			"status":"INIT"
+		}`),
+	)
+
+	rr := httptest.NewRecorder()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+
+	var provider models.Provider
+
+	h.ProcessConnectionRegistration(
+		rr,
+		req,
+		nil,
+		&models.User{ID: uuid.Must(uuid.NewV4())},
+		provider,
+	)
+}
+func TestNotifySmOfConnectionStatusChange_NilConnection(t *testing.T) {
+        h := newConnectionsTestHandler(t)
+
+        defer func() {
+                if recover() == nil {
+                        t.Fatal("expected panic")
+                }
+        }()
+
+        h.NotifySmOfConnectionStatusChange(
+                context.Background(),
+                uuid.Must(uuid.NewV4()),
+                nil,
+                "",
+                nil,
+        )
+}
